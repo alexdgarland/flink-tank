@@ -1,0 +1,17 @@
+# TODO - Warning: Version v1beta2 of the KafkaTopic API is deprecated. Please use the v1 version instead.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: output-results
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: my-cluster  # Must match your Kafka cluster name
+spec:
+  partitions: 6
+  replicas: 1  # Single node cluster = 1 replica max
+  config:
+    retention.ms: 2592000000     # 30 days
+    segment.ms: 7200000          # 2 hour segments
+    compression.type: lz4
+    cleanup.policy: delete
+    min.insync.replicas: 1
