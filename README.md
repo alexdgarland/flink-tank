@@ -56,7 +56,7 @@ brew install kcat
 ### Creating topics
 
 ```bash
-kubectl apply -f topics/
+kubectl apply -f k8s/topics/
 ```
 
-(See [topics/README.md](topics/README.md) for more details).
+(See [k8s/topics/README.md](k8s/topics/README.md) for more details).

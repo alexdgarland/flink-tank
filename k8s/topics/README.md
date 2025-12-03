@@ -5,7 +5,12 @@ Kafka topic definitions managed by Strimzi operator.
 ## Apply topics
 
 ```bash
-kubectl apply -f topics/
+kubectl apply -f k8s/topics/
+```
+
+Or from this directory:
+```bash
+kubectl apply -f .
 ```
 
 ## Verify topics were created

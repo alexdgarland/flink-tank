@@ -6,7 +6,7 @@ A Python CLI wrapper around kcat running in Kubernetes, so you don't have to man
 
 1. **Deploy kcat to your cluster:**
    ```bash
-   kubectl apply -f k8s/kcat-deployment.yaml
+   kubectl apply -f k8s/tools/kcat-deployment.yaml
    ```
 
 2. **Install the Python CLI:**
@@ -124,13 +124,13 @@ This means:
 kubectl get pods -n kafka -l app=kcat
 
 # If not running, deploy it
-kubectl apply -f k8s/kcat-deployment.yaml
+kubectl apply -f k8s/tools/kcat-deployment.yaml
 ```
 
 **Connection issues:**
 The kcat pod is configured to connect to `my-cluster-kafka-bootstrap:9092`. If your Kafka cluster has a different name, update:
-- `BOOTSTRAP_SERVERS` in `kcat_cli.py`
-- `KAFKA_BOOTSTRAP_SERVERS` env var in `k8s/kcat-deployment.yaml`
+- `BOOTSTRAP_SERVERS` in `kafka-tools/kcat_cli.py`
+- `KAFKA_BOOTSTRAP_SERVERS` env var in `k8s/tools/kcat-deployment.yaml`
 
 ## kcat Format String Reference
 
