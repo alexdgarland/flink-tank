@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kcat
+  namespace: kafka
+  labels:
+    app: kcat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kcat
+  template:
+    metadata:
+      labels:
+        app: kcat
+    spec:
+      containers:
+      - name: kcat
+        image: confluentinc/cp-kafkacat:latest
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do sleep 3600; done"]
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "my-cluster-kafka-bootstrap:9092"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
