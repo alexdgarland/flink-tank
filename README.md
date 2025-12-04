@@ -31,7 +31,7 @@ We likely want to change this to run a custom job (that actually interacts with 
 kubectl create -f https://raw.githubusercontent.com/apache/flink-kubernetes-operator/release-1.13/examples/basic.yaml
 ```
 
-## KAFKA!
+## Kafka Infrastructure
 
 Referencing https://strimzi.io/quickstarts/ at least for now.
 
@@ -47,12 +47,6 @@ kubectl create -f 'https://strimzi.io/install/latest?namespace=kafka' -n kafka
 kubectl apply -f https://strimzi.io/examples/latest/kafka/kafka-single-node.yaml -n kafka 
 ```
 
-I'm also going to try installing [KCat](https://github.com/edenhill/kcat):
-
-```bash
-brew install kcat
-```
-
 ### Creating topics
 
 ```bash
@@ -60,3 +54,7 @@ kubectl apply -f k8s/topics/
 ```
 
 (See [k8s/topics/README.md](k8s/topics/README.md) for more details).
+
+### Interacting with Kafka
+
+See [kafka-tools/README.md](kafka-tools/README.md) for the `ktool` CLI that wraps Kafka console commands.
