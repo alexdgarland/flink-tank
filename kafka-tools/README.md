@@ -13,15 +13,16 @@ This installs dependencies in a uv-managed virtual environment.
 
 ## Tools
 
-### podcat
+### ktool
 
-A CLI wrapper around kcat that runs commands in the Kubernetes pod, eliminating the need for port-forwarding.
+A CLI wrapper around Kafka console tools that runs commands in Kubernetes broker pods, eliminating the need for port-forwarding.
 
 See [../KCAT_USAGE.md](../KCAT_USAGE.md) for full documentation.
 
 **Quick examples:**
 ```bash
-uv run podcat list-topics
-uv run podcat consume input-events --offset beginning
-echo "Hello!" | uv run podcat produce input-events
+uv run ktool list-topics
+uv run ktool consume input-events --offset beginning --count 10
+uv run ktool produce input-events "Hello Kafka"
+echo "Hello!" | uv run ktool produce input-events
 ```

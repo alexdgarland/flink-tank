@@ -16,7 +16,7 @@ dev = [
 ]
 
 [project.scripts]
-podcat = "kcat_cli:cli"
+ktool = "ktool:cli"
 
 [build-system]
 requires = ["setuptools>=65.0", "wheel"]

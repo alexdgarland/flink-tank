@@ -1,21 +1,16 @@
-# kcat CLI Usage
+# ktool CLI Usage
 
-A Python CLI wrapper around kcat running in Kubernetes, so you don't have to manage port-forwards.
+A Python CLI wrapper around Kafka console tools running in Kubernetes broker pods, so you don't have to manage port-forwards.
 
 ## Setup
 
-1. **Deploy kcat to your cluster:**
-   ```bash
-   kubectl apply -f k8s/tools/kcat-deployment.yaml
-   ```
-
-2. **Install the Python CLI:**
+**Install the Python CLI:**
    ```bash
    cd kafka-tools
    uv pip install -e .
    ```
 
-   This creates a virtual environment and installs dependencies. Use `uv run podcat` to execute commands.
+   This creates a virtual environment and installs dependencies. Use `uv run ktool` to execute commands.
 
 ## Commands
 
@@ -23,35 +18,46 @@ A Python CLI wrapper around kcat running in Kubernetes, so you don't have to man
 
 List all Kafka topics and cluster metadata:
 ```bash
-uv run podcat list-topics
+uv run ktool list-topics
 ```
 
 ### Describe Topic
 
 Get detailed metadata about a specific topic:
 ```bash
-uv run podcat describe input-events
+uv run ktool describe input-events
 ```
 
 ### Consume Messages
 
 Consume messages from a topic:
 ```bash
-# Consume from beginning and stream continuously
-uv run podcat consume input-events
+# Consume from end (latest messages) - default behavior
+uv run ktool consume input-events
 
-# Consume last 10 messages and exit
-uv run podcat consume input-events --offset end --count 10 --exit-eof
+# Consume from beginning
+uv run ktool consume input-events --offset beginning
 
-# Custom output format
-uv run podcat consume input-events --format '%t [%p] at offset %o: key=%k value=%s\n'
+# Consume first 10 messages
+uv run ktool consume input-events --offset beginning --count 10
+
+# Consume with keys and timestamps
+uv run ktool consume input-events --offset beginning --print-key --print-timestamp
+
+# Consume from specific partition
+uv run ktool consume input-events --offset beginning --partition 0
+
+# Adjust timeout (default 10 seconds)
+uv run ktool consume input-events --timeout-ms 5000
 ```
 
 **Options:**
-- `-o, --offset`: Where to start consuming (`beginning`, `end`, `stored`, or numeric offset)
+- `-o, --offset`: Where to start consuming (`beginning` or `end`; default: `end`)
+- `-p, --partition`: Specific partition to consume from
 - `-c, --count`: Exit after consuming N messages
-- `-f, --format`: Custom output format using printf-style placeholders
-- `-e, --exit-eof`: Exit when reaching end of partition
+- `--print-key`: Print message keys
+- `--print-timestamp`: Print message timestamps
+- `--timeout-ms`: Timeout in milliseconds (default: 10000)
 
 ### Produce Messages
 
@@ -59,29 +65,33 @@ Send messages to a topic:
 
 ```bash
 # Produce a single message
-uv run podcat produce input-events "Hello Kafka"
+uv run ktool produce input-events "Hello Kafka"
 
-# Produce with a key
-uv run podcat produce input-events --key "user123" "User logged in"
-
-# Produce to specific partition
-uv run podcat produce input-events --partition 2 "Message for partition 2"
+# Produce with a key (for partition distribution)
+uv run ktool produce input-events --key "user123" "User logged in"
 
 # Pipe from stdin
-echo "Message from pipe" | uv run podcat produce input-events
+echo "Message from pipe" | uv run ktool produce input-events
 
 # Multiple messages via stdin
-cat << EOF | uv run podcat produce input-events
+cat << EOF | uv run ktool produce input-events
 Message 1
 Message 2
 Message 3
 EOF
 
 # Read from file
-uv run podcat produce input-events --file messages.txt
+uv run ktool produce input-events --file messages.txt
 
-# Combine key with piped input
-echo -e "msg1\nmsg2\nmsg3" | uv run podcat produce input-events --key "batch-123"
+# Combine key with piped input (all messages get same key)
+echo -e "msg1\nmsg2\nmsg3" | uv run ktool produce input-events --key "batch-123"
+```
+
+**Note:** Partition selection is automatic based on key hash. Different keys will distribute across partitions. To test partition distribution, send messages with different keys:
+```bash
+uv run ktool produce input-events --key "key1" "Message 1"
+uv run ktool produce input-events --key "key2" "Message 2"
+uv run ktool produce input-events --key "key3" "Message 3"
 ```
 
 ### Query Offsets
@@ -89,10 +99,10 @@ echo -e "msg1\nmsg2\nmsg3" | uv run podcat produce input-events --key "batch-123
 Query topic/partition offsets and watermarks:
 ```bash
 # Query all partitions of a topic
-uv run podcat query input-events
+uv run ktool query input-events
 
 # Query specific partition
-uv run podcat query input-events --partition 2
+uv run ktool query input-events --partition 2
 ```
 
 ## Direct Usage (without installation)
@@ -100,47 +110,46 @@ uv run podcat query input-events --partition 2
 If you don't want to install, you can run it directly:
 ```bash
 cd kafka-tools
-python kcat_cli.py list-topics
-python kcat_cli.py consume input-events
+python ktool.py list-topics
+python ktool.py consume input-events
 ```
 
 ## How It Works
 
 The CLI:
-1. Finds the kcat pod using the label `app=kcat` in the `kafka` namespace
-2. Executes `kubectl exec` to run kcat commands inside the pod
+1. Finds a Kafka broker pod using the label `strimzi.io/cluster=my-cluster,strimzi.io/kind=Kafka` in the `kafka` namespace
+2. Executes `kubectl exec` to run Kafka console tools (kafka-topics.sh, kafka-console-consumer.sh, etc.) inside the pod
 3. Streams output back to your terminal
 
 This means:
 - No port-forwarding needed
-- No kcat installation on your local machine required (just Python + Click)
+- No extra deployment needed - uses the Kafka broker pods directly
+- Guaranteed version compatibility (tools match Kafka broker version)
 - Direct access to Kafka using internal cluster DNS
 
 ## Troubleshooting
 
 **Pod not found:**
 ```bash
-# Verify the kcat pod is running
-kubectl get pods -n kafka -l app=kcat
-
-# If not running, deploy it
-kubectl apply -f k8s/tools/kcat-deployment.yaml
+# Verify the Kafka broker pods are running
+kubectl get pods -n kafka -l strimzi.io/cluster=my-cluster,strimzi.io/kind=Kafka
 ```
 
 **Connection issues:**
-The kcat pod is configured to connect to `my-cluster-kafka-bootstrap:9092`. If your Kafka cluster has a different name, update:
-- `BOOTSTRAP_SERVERS` in `kafka-tools/kcat_cli.py`
-- `KAFKA_BOOTSTRAP_SERVERS` env var in `k8s/tools/kcat-deployment.yaml`
+The tool is configured to connect to `my-cluster-kafka-bootstrap:9092`. If your Kafka cluster has a different name, update:
+- `BOOTSTRAP_SERVERS` in `kafka-tools/ktool.py`
+- `KAFKA_POD_LABEL` in `kafka-tools/ktool.py` (change `my-cluster` to your cluster name)
 
-## kcat Format String Reference
+## Differences from kcat
 
-Common format placeholders for `--format`:
-- `%s` - Message payload
-- `%k` - Message key
-- `%t` - Topic name
-- `%p` - Partition number
-- `%o` - Offset
-- `%T` - Message timestamp
-- `%h` - Headers
+This tool now uses Kafka's official console tools instead of kcat for better compatibility:
 
-Example: `'Topic: %t, Partition: %p, Offset: %o, Key: %k, Value: %s\n'`
+**Improvements:**
+- Guaranteed compatibility with any Kafka version (tools match broker version)
+- No extra pod deployment needed
+- More reliable with newer Kafka versions (4.x+)
+
+**Limitations vs kcat:**
+- Less flexible output formatting (use `--print-key` and `--print-timestamp` flags)
+- Cannot produce to specific partition (automatic based on key hash)
+- Consume defaults to latest messages (use `--offset beginning` for older behavior)
