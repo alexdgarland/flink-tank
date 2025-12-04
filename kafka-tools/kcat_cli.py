@@ -14,6 +14,7 @@ import click
 NAMESPACE = "kafka"
 POD_LABEL = "app=kcat"
 BOOTSTRAP_SERVERS = "my-cluster-kafka-bootstrap:9092"
+KCAT_EXECUTABLE = "kcat"  # Using edenhill/kcat image
 
 
 def get_kcat_pod() -> str:
@@ -57,16 +58,24 @@ def run_kcat(kcat_args: List[str], stdin_data: Optional[str] = None) -> subproce
     kubectl_cmd = [
         "kubectl",
         "exec",
+    ]
+
+    # Add -i flag if we're providing stdin data
+    if stdin_data:
+        kubectl_cmd.append("-i")
+
+    kubectl_cmd.extend([
         "-n",
         NAMESPACE,
         pod_name,
         "--",
-        "kcat",
+        KCAT_EXECUTABLE,
         "-b",
         BOOTSTRAP_SERVERS,
-    ] + kcat_args
+    ])
+    kubectl_cmd.extend(kcat_args)
 
-    click.echo(f"Executing on pod {pod_name}: kcat -b {BOOTSTRAP_SERVERS} {' '.join(kcat_args)}", err=True)
+    click.echo(f"Executing on pod {pod_name}: {KCAT_EXECUTABLE} -b {BOOTSTRAP_SERVERS} {' '.join(kcat_args)}", err=True)
 
     result = subprocess.run(
         kubectl_cmd,

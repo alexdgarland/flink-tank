@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: kcat
-        image: confluentinc/cp-kafkacat:latest
+        image: edenhill/kcat:1.7.1
         command: ["/bin/sh"]
         args: ["-c", "while true; do sleep 3600; done"]
         env:

@@ -9,7 +9,7 @@ cd kafka-tools
 uv pip install -e .
 ```
 
-This installs the `podcat` command in your environment.
+This installs dependencies in a uv-managed virtual environment.
 
 ## Tools
 
@@ -21,7 +21,7 @@ See [../KCAT_USAGE.md](../KCAT_USAGE.md) for full documentation.
 
 **Quick examples:**
 ```bash
-podcat list-topics
-podcat consume input-events --offset beginning
-echo "Hello!" | podcat produce input-events
+uv run podcat list-topics
+uv run podcat consume input-events --offset beginning
+echo "Hello!" | uv run podcat produce input-events
 ```

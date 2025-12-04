@@ -15,7 +15,7 @@ A Python CLI wrapper around kcat running in Kubernetes, so you don't have to man
    uv pip install -e .
    ```
 
-   This creates a virtual environment (if needed) and installs the `podcat` command.
+   This creates a virtual environment and installs dependencies. Use `uv run podcat` to execute commands.
 
 ## Commands
 
@@ -23,14 +23,14 @@ A Python CLI wrapper around kcat running in Kubernetes, so you don't have to man
 
 List all Kafka topics and cluster metadata:
 ```bash
-podcat list-topics
+uv run podcat list-topics
 ```
 
 ### Describe Topic
 
 Get detailed metadata about a specific topic:
 ```bash
-podcat describe input-events
+uv run podcat describe input-events
 ```
 
 ### Consume Messages
@@ -38,13 +38,13 @@ podcat describe input-events
 Consume messages from a topic:
 ```bash
 # Consume from beginning and stream continuously
-podcat consume input-events
+uv run podcat consume input-events
 
 # Consume last 10 messages and exit
-podcat consume input-events --offset end --count 10 --exit-eof
+uv run podcat consume input-events --offset end --count 10 --exit-eof
 
 # Custom output format
-podcat consume input-events --format '%t [%p] at offset %o: key=%k value=%s\n'
+uv run podcat consume input-events --format '%t [%p] at offset %o: key=%k value=%s\n'
 ```
 
 **Options:**
@@ -59,29 +59,29 @@ Send messages to a topic:
 
 ```bash
 # Produce a single message
-podcat produce input-events "Hello Kafka"
+uv run podcat produce input-events "Hello Kafka"
 
 # Produce with a key
-podcat produce input-events --key "user123" "User logged in"
+uv run podcat produce input-events --key "user123" "User logged in"
 
 # Produce to specific partition
-podcat produce input-events --partition 2 "Message for partition 2"
+uv run podcat produce input-events --partition 2 "Message for partition 2"
 
 # Pipe from stdin
-echo "Message from pipe" | podcat produce input-events
+echo "Message from pipe" | uv run podcat produce input-events
 
 # Multiple messages via stdin
-cat << EOF | podcat produce input-events
+cat << EOF | uv run podcat produce input-events
 Message 1
 Message 2
 Message 3
 EOF
 
 # Read from file
-podcat produce input-events --file messages.txt
+uv run podcat produce input-events --file messages.txt
 
 # Combine key with piped input
-echo -e "msg1\nmsg2\nmsg3" | podcat produce input-events --key "batch-123"
+echo -e "msg1\nmsg2\nmsg3" | uv run podcat produce input-events --key "batch-123"
 ```
 
 ### Query Offsets
@@ -89,10 +89,10 @@ echo -e "msg1\nmsg2\nmsg3" | podcat produce input-events --key "batch-123"
 Query topic/partition offsets and watermarks:
 ```bash
 # Query all partitions of a topic
-podcat query input-events
+uv run podcat query input-events
 
 # Query specific partition
-podcat query input-events --partition 2
+uv run podcat query input-events --partition 2
 ```
 
 ## Direct Usage (without installation)
