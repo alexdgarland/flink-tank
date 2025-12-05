@@ -1,0 +1,40 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkSessionJob
+metadata:
+  name: event-processor-job
+  namespace: default
+spec:
+  # Reference to the session cluster
+  deploymentName: flink-session-cluster
+
+  job:
+    # JAR location - served by jar-server pod
+    jarURI: http://jar-server.default.svc:8080/flink-job-1.0.0.jar
+
+    # Main class
+    entryClass: com.example.flink.EventProcessorJob
+
+    # Job parallelism - distribute work across available task slots
+    parallelism: 2
+
+    # How to upgrade when manifest changes
+    upgradeMode: savepoint
+
+    # Desired state
+    state: running
+
+    # Pass Kafka configuration as arguments
+    args:
+      - "--kafka-bootstrap-servers"
+      - "my-cluster-kafka-bootstrap.kafka.svc:9092"
+      - "--input-topic"
+      - "input-events"
+      - "--output-topic"
+      - "output-results"
+      - "--error-topic"
+      - "error-events"
+      - "--consumer-group"
+      - "flink-event-processor"
+
+    # Allow non-restored state during development
+    allowNonRestoredState: true

@@ -5,6 +5,7 @@ Messing about ~~in boats!~~ with distributed stream processing. 😆
 ## Pre-reqs:
 - Kubernetes cluster (I use Kind via Docker Desktop)
 - Helm and Kubectl installed (preferably also K9s) - context should be set to the cluster you want to use
+- Kind CLI (`brew install kind`)
 
 See https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-release-1.13/docs/try-flink-kubernetes-operator/quick-start/
 
@@ -21,15 +22,21 @@ helm repo add flink-operator-repo https://downloads.apache.org/flink/flink-kuber
 helm install flink-kubernetes-operator flink-operator-repo/flink-kubernetes-operator
 ```
 
-## Create a Flink deployment
+## Create a Flink Session Cluster
 
-This is a basic example that runs the StateMachineExample code bundled into Flink on a dedicated application cluster.
-
-We likely want to change this to run a custom job (that actually interacts with Kafka - see below) and maybe uses a session cluster that is easier for us to push ad-hoc jobs to iteratively.
+Deploy a session cluster that can accept multiple jobs:
 
 ```bash
-kubectl create -f https://raw.githubusercontent.com/apache/flink-kubernetes-operator/release-1.13/examples/basic.yaml
+kubectl apply -f k8s/flink/session-cluster.yaml
 ```
+
+Check the deployment status:
+```bash
+kubectl get flinkdeployment
+kubectl port-forward svc/flink-session-cluster-rest 8081  # Access UI at localhost:8081
+```
+
+See [k8s/flink/README.md](k8s/flink/README.md) for more details about the session cluster setup and how to submit jobs.
 
 ## Kafka Infrastructure
 
@@ -58,3 +65,33 @@ kubectl apply -f k8s/topics/
 ### Interacting with Kafka
 
 See [kafka-tools/README.md](kafka-tools/README.md) for the `ktool` CLI that wraps Kafka console commands.
+
+## Deploy Flink Job
+
+The repository includes a Kotlin-based Flink job that processes events from Kafka.
+
+### Build and Deploy
+
+```bash
+./deploy-job.sh
+```
+
+### Test the Job
+
+```bash
+cd kafka-tools
+
+# Load sample valid events
+uv run ktool produce input-events --file sample-events.json
+
+# Send an invalid (non-JSON) event to test error handling
+uv run ktool produce input-events "this is not valid JSON"
+
+# Check the processed results
+uv run ktool consume output-results --offset beginning
+
+# Check error events
+uv run ktool consume error-events --offset beginning
+```
+
+See [flink-job/README.md](flink-job/README.md) for full documentation.

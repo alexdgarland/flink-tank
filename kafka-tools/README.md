@@ -95,6 +95,9 @@ EOF
 # Read from file
 uv run ktool produce input-events --file messages.txt
 
+# Load sample events for Flink testing
+uv run ktool produce input-events --file sample-events.json
+
 # Combine key with piped input (all messages get same key)
 echo -e "msg1\nmsg2\nmsg3" | uv run ktool produce input-events --key "batch-123"
 ```

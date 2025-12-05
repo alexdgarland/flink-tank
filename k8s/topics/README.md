@@ -2,6 +2,12 @@
 
 Kafka topic definitions managed by Strimzi operator.
 
+## Topics
+
+- **input-events** - Raw incoming events (3 partitions, 7 day retention)
+- **output-results** - Processed/enriched events (6 partitions, 30 day retention)
+- **error-events** - Failed/unparseable events (3 partitions, 7 day retention)
+
 ## Apply topics
 
 ```bash
