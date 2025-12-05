@@ -52,64 +52,41 @@ This job:
 }
 ```
 
-## Building
+## Architecture
 
-### Prerequisites
-- Docker
-- Java 11+ (for local Gradle builds, but Docker build handles this)
+The job uses a JAR server architecture:
 
-### Build the Docker Image
+1. **JAR Server**: An nginx-based pod that serves the compiled JAR over HTTP
+2. **Session Cluster**: Uses stock `flink:1.20` image (no custom image needed)
+3. **Flink Operator**: Fetches the JAR from `http://jar-server.default.svc:8080/flink-job-1.0.0.jar`
 
-```bash
-./build.sh
-```
+This approach allows the session cluster to use the standard Flink image while still providing custom job code.
 
-This builds a Docker image `flink-event-processor:latest` containing:
-- Base Flink 1.20 runtime
-- Your compiled JAR at `/opt/flink/usrlib/flink-job-1.0.0.jar`
+## Building and Deploying
 
-### Load to Kind (Local Development)
+### Deploy the JAR Server, topics and job
+
+_(Assumes all infra including Flink session cluster is running)._
 
 ```bash
-./load-to-kind.sh
+# From top level of project
+./deploy-job.sh
 ```
 
-This loads the Docker image into your local Kind cluster so Kubernetes can use it.
-
-## Deploying
-
-### 1. Ensure Session Cluster is Running
-
-```bash
-kubectl get flinkdeployment
-# Should show flink-session-cluster as READY
-```
-
-If not deployed yet:
-```bash
-kubectl apply -f ../k8s/flink/session-cluster.yaml
-```
-
-### 2. Deploy the Job
-
-```bash
-kubectl apply -f ../k8s/flink/event-processor-job.yaml
-```
-
-### 3. Check Job Status
+### Check Job Status
 
 ```bash
 kubectl get flinksessionjob
 kubectl describe flinksessionjob event-processor-job
 ```
 
-### 4. View Job in Flink UI
+### View Job in Flink UI
 
 ```bash
-kubectl port-forward svc/flink-session-cluster-rest 8081
+../portforward-ui.sh
 ```
 
-Then visit http://localhost:8081
+Then visit http://localhost:8081.
 
 ## Testing the Job
 
@@ -140,14 +117,14 @@ uv run ktool consume error-events --offset beginning
 
 ## Configuration
 
-The job accepts these command-line arguments:
+The job accepts these command-line arguments (configured in `../k8s/flink/event-processor-job.yaml`):
 - `--kafka-bootstrap-servers` - Kafka broker address (default: `my-cluster-kafka-bootstrap.kafka.svc:9092`)
 - `--input-topic` - Input topic name (default: `input-events`)
 - `--output-topic` - Output topic name (default: `output-results`)
 - `--error-topic` - Error topic name (default: `error-events`)
 - `--consumer-group` - Consumer group ID (default: `flink-event-processor`)
 
-These are configured in the session job manifest at `../k8s/flink/event-processor-job.yaml`.
+The JAR is fetched from `http://jar-server.default.svc:8080/flink-job-1.0.0.jar` as specified in the job manifest.
 
 ## Development
 
@@ -165,25 +142,13 @@ These are configured in the session job manifest at `../k8s/flink/event-processo
 
 ### Update the Job
 
-After making code changes:
+After making code changes, rebuild and redeploy the JAR server:
 
-1. Rebuild the image:
-   ```bash
-   ./build.sh
-   ```
+```bash
+./deploy-job.sh
+```
 
-2. Reload to Kind:
-   ```bash
-   ./load-to-kind.sh
-   ```
-
-3. Update the session cluster to use the new image:
-   ```bash
-   kubectl edit flinkdeployment flink-session-cluster
-   # Change image to: flink-event-processor:latest
-   ```
-
-4. The Flink operator will automatically restart the session cluster with the new image, and your job will resume from the last savepoint.
+The job will be restarted and the operator will fetch the updated JAR from the JAR server.
 
 ## Troubleshooting
 
@@ -196,22 +161,3 @@ kubectl get pods | grep flink-session-cluster
 # View logs
 kubectl logs <taskmanager-pod-name>
 ```
-
-### Job Not Starting
-
-Check the session job status:
-```bash
-kubectl describe flinksessionjob event-processor-job
-```
-
-Common issues:
-- JAR path incorrect - check that `/opt/flink/usrlib/flink-job-1.0.0.jar` exists in the image
-- Not enough task slots - ensure parallelism (2) <= available slots (4)
-- Image not loaded to Kind - run `./load-to-kind.sh`
-
-### No Messages Processing
-
-Check that:
-1. Kafka topics exist: `uv run ktool list-topics`
-2. Messages are in input topic: `uv run ktool consume input-events --offset beginning`
-3. Job is running: Check Flink UI at http://localhost:8081

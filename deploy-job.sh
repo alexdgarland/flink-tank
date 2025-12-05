@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
-echo "🏗️  Building JAR server..."
+echo "📝 Ensuring topics exist..."
+kubectl apply -f k8s/topics/
+
+echo ""
+echo "🏗️ Building JAR server..."
 docker build -t jar-server:latest ./flink-job
 
 echo ""
@@ -18,8 +22,8 @@ kubectl wait --for=condition=available --timeout=60s deployment/jar-server
 
 echo ""
 echo "✅ JAR server ready!"
-echo ""
-echo "(Re-)creating Flink job:"
 
+echo ""
+echo "🔄 (Re-)creating Flink job:"
 kubectl delete -f k8s/flink/event-processor-job.yaml
 kubectl apply -f k8s/flink/event-processor-job.yaml

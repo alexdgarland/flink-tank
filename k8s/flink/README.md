@@ -24,7 +24,7 @@ kubectl describe flinkdeployment flink-session-cluster
 ### Access Flink UI
 
 ```bash
-kubectl port-forward svc/flink-session-cluster-rest 8081
+../../portforward-ui.sh
 ```
 
 Then visit http://localhost:8081
@@ -32,7 +32,7 @@ Then visit http://localhost:8081
 ### Configuration Details
 
 The session cluster is configured with:
-- **Flink version:** 1.20
+- **Image:** Stock `flink:1.20` (no custom image needed)
 - **JobManager:** 2GB memory, 1 CPU
 - **TaskManagers:** 2 replicas, 2GB memory each, 1 CPU, 2 task slots per TM
 - **Total capacity:** 4 task slots (2 TMs × 2 slots)
@@ -50,28 +50,27 @@ For production, you'd want to:
 
 Once you have JVM code ready (Kotlin/Scala), you can submit session jobs to the cluster. Session jobs will be defined in separate manifest files and reference the session cluster.
 
-Example session job structure (to be created later):
+See [event-processor-job.yaml](event-processor-job.yaml) for current example.
 
-```yaml
-apiVersion: flink.apache.org/v1beta1
-kind: FlinkSessionJob
-metadata:
-  name: your-job-name
-  namespace: default
-spec:
-  deploymentName: flink-session-cluster
-  job:
-    jarURI: <location-of-your-jar>
-    parallelism: 2
-    upgradeMode: savepoint
-    state: running
-```
+### JAR Serving Architecture
 
-### Jar URI Options
+This project uses a JAR server approach to deliver application code:
 
-The `jarURI` can point to:
-- `local:///opt/flink/usrlib/your-job.jar` - jar baked into custom Docker image - but this has to be done in the **operator** image if using a session cluster, which is something we shouldn't redeploy with every job logic change
-- `https://example.com/your-job.jar` - remote HTTP(S) URL
-- `s3://bucket/your-job.jar` - S3 bucket (requires credentials)
+**Why JAR Server?**
+- The session cluster uses stock `flink:1.20` image (no custom builds needed)
+- Flink Operator fetches JARs from its own network context, not from cluster pods (so while "baking in" the JAR to a custom image would work for an application cluster, it doesn't work for session clusters)
+- JAR is served over HTTP from a simple nginx pod
+- Allows experimentation with "production-like" patterns (similar to using S3/artifact repositories)
 
-Current approach - we deploy a minimal HTTP server to make the JAR(s) available while still using a session cluster. This isn't the simplest approach for a local dev setup (using a dedicated application cluster would be easier) but allows some experimentation with "production-like" infra architecture patterns.
+**How it Works:**
+1. Two-stage Docker build: Gradle builds JAR → nginx serves it
+2. JAR server deployed at `http://jar-server.default.svc:8080/flink-job-1.0.0.jar`
+3. Session job manifest references this HTTP URI
+4. Flink Operator fetches and deploys the JAR
+
+See `../../flink-job/README.md` for full build and deployment instructions.
+
+**Alternative Approaches:**
+- `local://` - Requires custom operator image (too far down the stack)
+- Application Mode - Simpler for local dev, but less like production
+- S3/artifact repository - Production approach, JAR server mimics this pattern
