@@ -38,7 +38,8 @@ This job:
     "userId": 42,
     "original_timestamp": 1234567890000,
     "processing_pipeline": "flink-event-processor"
-  }
+  },
+  "sequence": 1
 }
 ```
 
