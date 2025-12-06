@@ -14,12 +14,12 @@ kind load docker-image jar-server:latest --name desktop
 
 echo ""
 echo "🚀 Deploying JAR server..."
+kubectl delete -f k8s/flink/jar-server.yaml || true
 kubectl apply -f k8s/flink/jar-server.yaml
 
 echo ""
 echo "⏳ Waiting for JAR server to be ready..."
 kubectl wait --for=condition=available --timeout=60s deployment/jar-server
-
 echo ""
 echo "✅ JAR server ready!"
 
