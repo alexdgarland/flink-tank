@@ -2,6 +2,7 @@
 set -e
 
 echo "📝 Ensuring topics exist..."
+kubectl delete -f k8s/topics/ || true
 kubectl apply -f k8s/topics/
 
 echo ""

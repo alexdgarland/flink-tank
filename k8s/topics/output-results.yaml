@@ -1,5 +1,4 @@
-# TODO - Warning: Version v1beta2 of the KafkaTopic API is deprecated. Please use the v1 version instead.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: output-results
