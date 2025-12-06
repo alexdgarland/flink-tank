@@ -13,10 +13,10 @@ import kotlin.test.assertTrue
 class EventProcessorJobTest {
 
     /**
-     * Helper to create a test stream from a list of strings using the modern Source API.
+     * Helper to create a test stream from message strings using the modern Source API.
      * Creates a local environment with parallelism=1 for deterministic test execution.
      */
-    private fun getTestStream(messages: List<String>): DataStream<String> {
+    private fun getTestStream(vararg messages: String): DataStream<String> {
         val env = StreamExecutionEnvironment.createLocalEnvironment()
         env.setParallelism(1)
 
@@ -35,7 +35,7 @@ class EventProcessorJobTest {
     fun `should parse and enrich valid events`() {
         // Given: Test input data
         val validEvent = """{"id":"event-123","type":"user.signup","timestamp":1234567890,"data":{"userId":"user-456"}}"""
-        val rawEventStream = getTestStream(listOf(validEvent))
+        val rawEventStream = getTestStream(validEvent)
 
         // When: Process through topology
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
@@ -57,7 +57,7 @@ class EventProcessorJobTest {
     fun `should route invalid JSON to error stream`() {
         // Given: Invalid input
         val invalidEvent = """not valid json at all"""
-        val rawEventStream = getTestStream(listOf(invalidEvent))
+        val rawEventStream = getTestStream(invalidEvent)
 
         // When: Process through topology
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
@@ -79,7 +79,7 @@ class EventProcessorJobTest {
         val invalidEvent = """garbage"""
         val validEvent2 = """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-123"}}"""
 
-        val rawEventStream = getTestStream(listOf(validEvent1, invalidEvent, validEvent2))
+        val rawEventStream = getTestStream(validEvent1, invalidEvent, validEvent2)
 
         // When: Process through topology
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
@@ -100,7 +100,7 @@ class EventProcessorJobTest {
     fun `should enrich events with processing metadata`() {
         // Given: Event data
         val event = """{"id":"meta-test","type":"test.event","timestamp":5000,"data":{"key":"value"}}"""
-        val rawEventStream = getTestStream(listOf(event))
+        val rawEventStream = getTestStream(event)
 
         // When: Process through topology
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
@@ -125,12 +125,12 @@ class EventProcessorJobTest {
     @Test
     fun `should assign a sequence to valid events on a per-key basis`() {
         // Given: Valid inputs split across two distinct keys (id)
-        val rawEventStream = getTestStream(listOf(
+        val rawEventStream = getTestStream(
             """{"id":"12","type":"order.created","timestamp":1000,"data":{}}""",
             """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-123"}}""",
             """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-124"}}""",
             """{"id":"12","type":"order.shipped","timestamp":1000,"data":{"orderID":"ord-125"}}"""
-        ))
+        )
 
         // When: Process through topology
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
