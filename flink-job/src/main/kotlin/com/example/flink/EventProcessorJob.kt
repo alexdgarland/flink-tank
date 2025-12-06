@@ -13,11 +13,19 @@ import org.apache.flink.connector.kafka.source.KafkaSource
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer
 import org.apache.flink.streaming.api.datastream.DataStream
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+import org.apache.flink.api.common.functions.MapFunction
 import org.apache.flink.streaming.api.functions.ProcessFunction
+
 import org.apache.flink.util.Collector
 import org.apache.flink.util.OutputTag
 import org.slf4j.LoggerFactory
 import java.time.Instant
+
+data class Connectors(
+    val kafkaSource: KafkaSource<String>,
+    val kafkaSink: KafkaSink<String>,
+    val errorKafkaSink: KafkaSink<String>
+)
 
 data class InputEvent(
     val id: String = "",
@@ -42,14 +50,8 @@ data class ErrorEvent(
 )
 
 data class ProcessingStreams(
-    val processedEvents: DataStream<ProcessedEvent>,
+    val enrichedValidEvents: DataStream<ProcessedEvent>,
     val errorEvents: DataStream<ErrorEvent>
-)
-
-data class Connectors(
-    val kafkaSource: KafkaSource<String>,
-    val kafkaSink: KafkaSink<String>,
-    val errorKafkaSink: KafkaSink<String>
 )
 
 object EventProcessorJob {
@@ -60,9 +62,7 @@ object EventProcessorJob {
     private val errorOutputTag = object : OutputTag<ErrorEvent>("error-output") {}
 
     fun getConnectors(args: Array<String>): Connectors {
-        // Parse command line arguments using Flink's ParameterTool
         val params = ParameterTool.fromArgs(args)
-
         val kafkaBootstrap = params.get("kafka-bootstrap-servers", "my-cluster-kafka-bootstrap.kafka.svc:9092")
         val inputTopic = params.get("input-topic", "input-events")
         val outputTopic = params.get("output-topic", "output-results")
@@ -80,79 +80,81 @@ object EventProcessorJob {
             .setValueOnlyDeserializer(SimpleStringSchema())
             .build()
 
+        val getOutputSink = { topicName: String ->
+            KafkaSink.builder<String>()
+                .setBootstrapServers(kafkaBootstrap)
+                .setRecordSerializer(
+                    KafkaRecordSerializationSchema.builder<String>()
+                        .setTopic(topicName)
+                        .setValueSerializationSchema(SimpleStringSchema())
+                        .build()
+                )
+                .build()
+        }
+
         // Kafka sink for successful events
-        val kafkaSink = KafkaSink.builder<String>()
-            .setBootstrapServers(kafkaBootstrap)
-            .setRecordSerializer(
-                KafkaRecordSerializationSchema.builder<String>()
-                    .setTopic(outputTopic)
-                    .setValueSerializationSchema(SimpleStringSchema())
-                    .build()
-            )
-            .build()
+        val kafkaSink = getOutputSink(outputTopic)
 
         // Kafka sink for error events
-        val errorKafkaSink = KafkaSink.builder<String>()
-            .setBootstrapServers(kafkaBootstrap)
-            .setRecordSerializer(
-                KafkaRecordSerializationSchema.builder<String>()
-                    .setTopic(errorTopic)
-                    .setValueSerializationSchema(SimpleStringSchema())
-                    .build()
-            )
-            .build()
+        val errorKafkaSink = getOutputSink(errorTopic)
 
         return Connectors(kafkaSource, kafkaSink, errorKafkaSink)
     }
 
-    fun getOutputStreams(rawEventStream: DataStream<String>): ProcessingStreams {
-        // Parse and route events
-        val parsedRoutedStream = rawEventStream
-            .process(object : ProcessFunction<String, InputEvent>() {
-                override fun processElement(
-                    rawEvent: String,
-                    ctx: Context,
-                    out: Collector<InputEvent>
-                ) {
-                    logger.debug("Processing raw event: $rawEvent")
-                    try {
-                        val inputEvent: InputEvent = objectMapper.readValue(rawEvent)
-                        logger.debug("Parsed input event: {}", inputEvent)
-                        out.collect(inputEvent)
-                    } catch (e: JsonProcessingException) {
-                        logger.warn("Failed to parse event: $rawEvent", e)
-                        // Send to error side output
-                        val errorEvent = ErrorEvent(
-                            rawMessage = rawEvent,
-                            errorType = "PARSE_ERROR",
-                            errorMessage = e.message ?: "Unknown parse error",
-                            timestamp = Instant.now().toString()
-                        )
-                        ctx.output(errorOutputTag, errorEvent)
-                    }
-                }
-            })
-            .name("Parse and Route")
+    private class ParseAndRoute: ProcessFunction<String, InputEvent>() {
+        override fun processElement(
+            rawEvent: String,
+            ctx: Context,
+            out: Collector<InputEvent>
+        ) {
+            logger.debug("Processing raw event: $rawEvent")
+            try {
+                val inputEvent: InputEvent = objectMapper.readValue(rawEvent)
+                logger.debug("Parsed input event: {}", inputEvent)
+                out.collect(inputEvent)
+            } catch (e: JsonProcessingException) {
+                logger.warn("Failed to parse event: $rawEvent", e)
+                // Send to error side output
+                val errorEvent = ErrorEvent(
+                    rawMessage = rawEvent,
+                    errorType = "PARSE_ERROR",
+                    errorMessage = e.message ?: "Unknown parse error",
+                    timestamp = Instant.now().toString()
+                )
+                ctx.output(errorOutputTag, errorEvent)
+            }
+        }
+    }
 
-        // Main stream: process valid events
-        val processedEvents = parsedRoutedStream
-            .map { event ->
-                // Process the event - add some enrichment
+    private class EnrichValidEvent: MapFunction<InputEvent, ProcessedEvent> {
+        override fun map(p0: InputEvent?): ProcessedEvent? {
+            return p0?.let { parsedInputEvent ->
                 val now = System.currentTimeMillis()
-                val delay = if (event.timestamp > 0) now - event.timestamp else 0
-
-                val enrichedData = event.data.toMutableMap()
-                enrichedData["original_timestamp"] = event.timestamp
+                val delay = if (parsedInputEvent.timestamp > 0) now - p0.timestamp else 0
+                val enrichedData = parsedInputEvent.data.toMutableMap()
+                enrichedData["original_timestamp"] = parsedInputEvent.timestamp
                 enrichedData["processing_pipeline"] = "flink-event-processor"
-
                 ProcessedEvent(
-                    originalId = event.id,
-                    eventType = event.type,
+                    originalId = parsedInputEvent.id,
+                    eventType = parsedInputEvent.type,
                     processedAt = Instant.ofEpochMilli(now).toString(),
                     processingDelay = delay,
                     enrichedData = enrichedData
                 )
             }
+        }
+
+    }
+
+    fun getOutputStreams(rawEventStream: DataStream<String>): ProcessingStreams {
+        // Parse and route events
+        val parsedRoutedStream = rawEventStream
+            .process(ParseAndRoute())
+            .name("Parse and Route")
+
+        // Main stream: process valid events
+        val processedEvents = parsedRoutedStream
+            .map(EnrichValidEvent())
             .name("Enrich Events")
 
         // Error stream
@@ -181,7 +183,7 @@ object EventProcessorJob {
         val streams = getOutputStreams(rawEventStream)
 
         // Serialize and sink processed events
-        streams.processedEvents
+        streams.enrichedValidEvents
             .map { processedEvent ->
                 val json = objectMapper.writeValueAsString(processedEvent)
                 logger.debug("Emitting processed event: $json")

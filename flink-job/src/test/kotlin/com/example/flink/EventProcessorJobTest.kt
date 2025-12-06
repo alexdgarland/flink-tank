@@ -41,7 +41,7 @@ class EventProcessorJobTest {
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
 
         // Then: Collect and verify processed events
-        val processedEvents = streams.processedEvents.executeAndCollect(10).toList()
+        val processedEvents = streams.enrichedValidEvents.executeAndCollect(10).toList()
 
         assertEquals(1, processedEvents.size)
         val processed = processedEvents[0]
@@ -84,7 +84,7 @@ class EventProcessorJobTest {
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
 
         // Then: Verify both streams
-        val processedEvents = streams.processedEvents.executeAndCollect(10).toList()
+        val processedEvents = streams.enrichedValidEvents.executeAndCollect(10).toList()
         val errorEvents = streams.errorEvents.executeAndCollect(10).toList()
 
         assertEquals(2, processedEvents.size)
@@ -105,7 +105,7 @@ class EventProcessorJobTest {
         val streams = EventProcessorJob.getOutputStreams(rawEventStream)
 
         // Then: Verify enrichment
-        val processedEvents = streams.processedEvents.executeAndCollect(10).toList()
+        val processedEvents = streams.enrichedValidEvents.executeAndCollect(10).toList()
 
         assertEquals(1, processedEvents.size)
         val processed = processedEvents[0]
