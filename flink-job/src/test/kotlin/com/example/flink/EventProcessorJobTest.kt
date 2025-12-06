@@ -50,6 +50,7 @@ class EventProcessorJobTest {
         assertTrue(processed.processingDelay >= 0)
         assertEquals(1234567890L, processed.enrichedData["original_timestamp"])
         assertEquals("flink-event-processor", processed.enrichedData["processing_pipeline"])
+        assertEquals(1, processed.sequence)
     }
 
     @Test
@@ -74,9 +75,9 @@ class EventProcessorJobTest {
     @Test
     fun `should handle mixed valid and invalid events`() {
         // Given: Mixed valid and invalid input
-        val validEvent1 = """{"id":"1","type":"order.created","timestamp":1000,"data":{}}"""
+        val validEvent1 = """{"id":"12","type":"order.created","timestamp":1000,"data":{}}"""
         val invalidEvent = """garbage"""
-        val validEvent2 = """{"id":"2","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-123"}}"""
+        val validEvent2 = """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-123"}}"""
 
         val rawEventStream = getTestStream(listOf(validEvent1, invalidEvent, validEvent2))
 
@@ -90,8 +91,8 @@ class EventProcessorJobTest {
         assertEquals(2, processedEvents.size)
         assertEquals(1, errorEvents.size)
 
-        assertEquals("1", processedEvents[0].originalId)
-        assertEquals("2", processedEvents[1].originalId)
+        assertEquals("12", processedEvents[0].originalId)
+        assertEquals("23", processedEvents[1].originalId)
         assertEquals("garbage", errorEvents[0].rawMessage)
     }
 
@@ -119,5 +120,35 @@ class EventProcessorJobTest {
 
         // Processing delay calculated
         assertTrue(processed.processingDelay > 0)
+    }
+
+    @Test
+    fun `should assign a sequence to valid events on a per-key basis`() {
+        // Given: Valid inputs split across two distinct keys (id)
+        val rawEventStream = getTestStream(listOf(
+            """{"id":"12","type":"order.created","timestamp":1000,"data":{}}""",
+            """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-123"}}""",
+            """{"id":"23","type":"order.shipped","timestamp":2000,"data":{"orderId":"ord-124"}}""",
+            """{"id":"12","type":"order.shipped","timestamp":1000,"data":{"orderID":"ord-125"}}"""
+        ))
+
+        // When: Process through topology
+        val streams = EventProcessorJob.getOutputStreams(rawEventStream)
+
+        // Then: Verify both streams
+        val processedEvents = streams.enrichedValidEvents.executeAndCollect(10).toList()
+        val errorEvents = streams.errorEvents.executeAndCollect(10).toList()
+
+        assertEquals(4, processedEvents.size)
+        assertEquals(0, errorEvents.size)
+
+        assertEquals("12", processedEvents[0].originalId)
+        assertEquals(1, processedEvents[0].sequence)
+        assertEquals("23", processedEvents[1].originalId)
+        assertEquals(1, processedEvents[1].sequence)
+        assertEquals("23", processedEvents[2].originalId)
+        assertEquals(2, processedEvents[2].sequence)
+        assertEquals("12", processedEvents[3].originalId)
+        assertEquals(2, processedEvents[3].sequence)
     }
 }

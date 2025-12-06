@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.apache.flink.api.common.eventtime.WatermarkStrategy
+import org.apache.flink.api.common.functions.OpenContext
 import org.apache.flink.api.common.serialization.SimpleStringSchema
+import org.apache.flink.api.common.state.ValueState
+import org.apache.flink.api.common.state.ValueStateDescriptor
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema
 import org.apache.flink.connector.kafka.sink.KafkaSink
@@ -13,13 +16,13 @@ import org.apache.flink.connector.kafka.source.KafkaSource
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer
 import org.apache.flink.streaming.api.datastream.DataStream
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
-import org.apache.flink.api.common.functions.MapFunction
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction
 import org.apache.flink.streaming.api.functions.ProcessFunction
-
 import org.apache.flink.util.Collector
 import org.apache.flink.util.OutputTag
 import org.slf4j.LoggerFactory
 import java.time.Instant
+
 
 data class Connectors(
     val kafkaSource: KafkaSource<String>,
@@ -39,7 +42,8 @@ data class ProcessedEvent(
     val eventType: String,
     val processedAt: String,
     val processingDelay: Long,
-    val enrichedData: Map<String, Any>
+    val enrichedData: Map<String, Any>,
+    val sequence: Int
 )
 
 data class ErrorEvent(
@@ -94,7 +98,6 @@ object EventProcessorJob {
 
         // Kafka sink for successful events
         val kafkaSink = getOutputSink(outputTopic)
-
         // Kafka sink for error events
         val errorKafkaSink = getOutputSink(errorTopic)
 
@@ -126,24 +129,38 @@ object EventProcessorJob {
         }
     }
 
-    private class EnrichValidEvent: MapFunction<InputEvent, ProcessedEvent> {
-        override fun map(p0: InputEvent?): ProcessedEvent? {
-            return p0?.let { parsedInputEvent ->
-                val now = System.currentTimeMillis()
-                val delay = if (parsedInputEvent.timestamp > 0) now - p0.timestamp else 0
-                val enrichedData = parsedInputEvent.data.toMutableMap()
-                enrichedData["original_timestamp"] = parsedInputEvent.timestamp
-                enrichedData["processing_pipeline"] = "flink-event-processor"
-                ProcessedEvent(
-                    originalId = parsedInputEvent.id,
-                    eventType = parsedInputEvent.type,
-                    processedAt = Instant.ofEpochMilli(now).toString(),
-                    processingDelay = delay,
-                    enrichedData = enrichedData
+    private class EnrichValidEvent: KeyedProcessFunction<String, InputEvent, ProcessedEvent>() {
+
+        private var latestSequence: ValueState<Int>? = null
+
+        @Throws(Exception::class)
+        override fun open(openContext: OpenContext?) {
+            latestSequence = getRuntimeContext().getState<Int>(
+                ValueStateDescriptor(
+                    "sequence",
+                    Int::class.java
                 )
-            }
+            )
         }
 
+        override fun processElement(validInputEvent: InputEvent, ctx: Context, out: Collector<ProcessedEvent>) {
+            val nextSequence: Int = (latestSequence?.value() ?: 0) + 1
+            val now = System.currentTimeMillis()
+            val delay = if (validInputEvent.timestamp > 0) now - validInputEvent.timestamp else 0
+            val enrichedData = validInputEvent.data.toMutableMap()
+            enrichedData["original_timestamp"] = validInputEvent.timestamp
+            enrichedData["processing_pipeline"] = "flink-event-processor"
+            val processed = ProcessedEvent(
+                originalId = validInputEvent.id,
+                eventType = validInputEvent.type,
+                processedAt = Instant.ofEpochMilli(now).toString(),
+                processingDelay = delay,
+                enrichedData = enrichedData,
+                sequence = nextSequence
+            )
+            out.collect(processed)
+            latestSequence?.update(nextSequence)
+        }
     }
 
     fun getOutputStreams(rawEventStream: DataStream<String>): ProcessingStreams {
@@ -154,13 +171,25 @@ object EventProcessorJob {
 
         // Main stream: process valid events
         val processedEvents = parsedRoutedStream
-            .map(EnrichValidEvent())
+            .keyBy { it.id }
+            .process(EnrichValidEvent())
             .name("Enrich Events")
 
         // Error stream
         val errorEvents = parsedRoutedStream.getSideOutput(errorOutputTag)
 
         return ProcessingStreams(processedEvents, errorEvents)
+    }
+
+    private fun <T> serializeToSink(stream: DataStream<T>, sink: KafkaSink<String>, eventType: String) {
+        stream
+            .map { event ->
+                val json = objectMapper.writeValueAsString(event)
+                logger.debug("Emitting $eventType event: $json")
+                json
+            }
+            .sinkTo(sink)
+            .name("Kafka Sink - ${eventType.replaceFirstChar(Char::titlecase)}")
     }
 
     @JvmStatic
@@ -182,23 +211,8 @@ object EventProcessorJob {
         // Process events and get back typed streams
         val streams = getOutputStreams(rawEventStream)
 
-        // Serialize and sink processed events
-        streams.enrichedValidEvents
-            .map { processedEvent ->
-                val json = objectMapper.writeValueAsString(processedEvent)
-                logger.debug("Emitting processed event: $json")
-                json
-            }
-            .sinkTo(connectors.kafkaSink)
-            .name("Kafka Sink - Results")
-
-        // Serialize and sink error events
-        streams.errorEvents
-            .map { errorEvent ->
-                objectMapper.writeValueAsString(errorEvent)
-            }
-            .sinkTo(connectors.errorKafkaSink)
-            .name("Kafka Sink - Errors")
+        serializeToSink(streams.enrichedValidEvents, connectors.kafkaSink, "enriched")
+        serializeToSink(streams.errorEvents, connectors.errorKafkaSink, "error")
 
         env.execute("Event Processor Job")
     }
