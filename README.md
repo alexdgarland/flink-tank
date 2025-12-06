@@ -10,7 +10,6 @@ Messing about ~~in boats!~~ with distributed stream processing. 😆
 ## Create base infrastructure
 
 For Flink (https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-release-1.13/docs/try-flink-kubernetes-operator/quick-start/) and Kafka (https://strimzi.io/quickstarts/).
-## Cert Manager (required for Flink webhooks)
 
 ```bash
 ./create-infra.sh
