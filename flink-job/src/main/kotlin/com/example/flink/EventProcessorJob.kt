@@ -53,7 +53,7 @@ data class ErrorEvent(
     val timestamp: String
 )
 
-data class ProcessingStreams(
+data class OutputStreams(
     val enrichedValidEvents: DataStream<ProcessedEvent>,
     val errorEvents: DataStream<ErrorEvent>
 )
@@ -62,7 +62,6 @@ object EventProcessorJob {
     private val logger = LoggerFactory.getLogger(EventProcessorJob::class.java)
     private val objectMapper: ObjectMapper = jacksonObjectMapper()
 
-    // Output tag for side output (errors) - must be anonymous class for type inference
     private val errorOutputTag = object : OutputTag<ErrorEvent>("error-output") {}
 
     fun getConnectors(args: Array<String>): Connectors {
@@ -75,7 +74,6 @@ object EventProcessorJob {
 
         logger.info("Configuration: kafka=$kafkaBootstrap, input=$inputTopic, output=$outputTopic, error=$errorTopic, group=$consumerGroup")
 
-        // Kafka source configuration
         val kafkaSource = KafkaSource.builder<String>()
             .setBootstrapServers(kafkaBootstrap)
             .setTopics(inputTopic)
@@ -85,31 +83,21 @@ object EventProcessorJob {
             .build()
 
         val getOutputSink = { topicName: String ->
+            val serializationSchema = KafkaRecordSerializationSchema.builder<String>()
+                .setTopic(topicName)
+                .setValueSerializationSchema(SimpleStringSchema())
+                .build()
             KafkaSink.builder<String>()
                 .setBootstrapServers(kafkaBootstrap)
-                .setRecordSerializer(
-                    KafkaRecordSerializationSchema.builder<String>()
-                        .setTopic(topicName)
-                        .setValueSerializationSchema(SimpleStringSchema())
-                        .build()
-                )
+                .setRecordSerializer(serializationSchema)
                 .build()
         }
 
-        // Kafka sink for successful events
-        val kafkaSink = getOutputSink(outputTopic)
-        // Kafka sink for error events
-        val errorKafkaSink = getOutputSink(errorTopic)
-
-        return Connectors(kafkaSource, kafkaSink, errorKafkaSink)
+        return Connectors(kafkaSource, kafkaSink=getOutputSink(outputTopic), errorKafkaSink=getOutputSink(errorTopic))
     }
 
     private class ParseAndRoute: ProcessFunction<String, InputEvent>() {
-        override fun processElement(
-            rawEvent: String,
-            ctx: Context,
-            out: Collector<InputEvent>
-        ) {
+        override fun processElement(rawEvent: String, ctx: Context, out: Collector<InputEvent>) {
             logger.debug("Processing raw event: $rawEvent")
             try {
                 val inputEvent: InputEvent = objectMapper.readValue(rawEvent)
@@ -117,7 +105,6 @@ object EventProcessorJob {
                 out.collect(inputEvent)
             } catch (e: JsonProcessingException) {
                 logger.warn("Failed to parse event: $rawEvent", e)
-                // Send to error side output
                 val errorEvent = ErrorEvent(
                     rawMessage = rawEvent,
                     errorType = "PARSE_ERROR",
@@ -136,10 +123,7 @@ object EventProcessorJob {
         @Throws(Exception::class)
         override fun open(openContext: OpenContext?) {
             latestSequence = getRuntimeContext().getState<Int>(
-                ValueStateDescriptor(
-                    "sequence",
-                    Int::class.java
-                )
+                ValueStateDescriptor("sequence", Int::class.java)
             )
         }
 
@@ -163,22 +147,19 @@ object EventProcessorJob {
         }
     }
 
-    fun getOutputStreams(rawEventStream: DataStream<String>): ProcessingStreams {
-        // Parse and route events
+    fun getOutputStreams(rawEventStream: DataStream<String>): OutputStreams {
         val parsedRoutedStream = rawEventStream
             .process(ParseAndRoute())
             .name("Parse and Route")
 
-        // Main stream: process valid events
         val processedEvents = parsedRoutedStream
             .keyBy { it.id }
             .process(EnrichValidEvent())
             .name("Enrich Events")
 
-        // Error stream
         val errorEvents = parsedRoutedStream.getSideOutput(errorOutputTag)
 
-        return ProcessingStreams(processedEvents, errorEvents)
+        return OutputStreams(processedEvents, errorEvents)
     }
 
     private fun <T> serializeToSink(stream: DataStream<T>, sink: KafkaSink<String>, eventType: String) {
@@ -197,22 +178,20 @@ object EventProcessorJob {
         logger.info("Starting Event Processor Job")
 
         val env = StreamExecutionEnvironment.getExecutionEnvironment()
-        env.enableCheckpointing(60000) // Checkpoint every 60 seconds
+        env.enableCheckpointing(60000)
 
         val connectors = getConnectors(args)
 
-        // Create the raw input stream from Kafka
         val rawEventStream = env.fromSource<String>(
             connectors.kafkaSource,
             WatermarkStrategy.noWatermarks(),
             "Kafka Source"
         )
 
-        // Process events and get back typed streams
-        val streams = getOutputStreams(rawEventStream)
+        val outputStreams = getOutputStreams(rawEventStream)
 
-        serializeToSink(streams.enrichedValidEvents, connectors.kafkaSink, "enriched")
-        serializeToSink(streams.errorEvents, connectors.errorKafkaSink, "error")
+        serializeToSink(outputStreams.enrichedValidEvents, connectors.kafkaSink, "enriched")
+        serializeToSink(outputStreams.errorEvents, connectors.errorKafkaSink, "error")
 
         env.execute("Event Processor Job")
     }
