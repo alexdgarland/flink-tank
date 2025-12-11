@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 echo "📝 Ensuring topics exist..."
 kubectl delete -f k8s/topics/ || true
@@ -20,7 +20,7 @@ kubectl apply -f k8s/flink/jar-server.yaml
 
 echo ""
 echo "⏳ Waiting for JAR server to be ready..."
-kubectl wait --for=condition=available --timeout=60s deployment/jar-server
+kubectl wait --for=condition=available --timeout=120s deployment/jar-server -n flink
 echo ""
 echo "✅ JAR server ready!"
 

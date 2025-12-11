@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-NAMESPACE="${1:-default}"
+NAMESPACE="${1:-flink}"
 LOCAL_PORT="${2:-8081}"
 
 echo "Finding Flink session cluster pod..."

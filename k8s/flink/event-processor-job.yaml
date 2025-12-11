@@ -2,14 +2,14 @@ apiVersion: flink.apache.org/v1beta1
 kind: FlinkSessionJob
 metadata:
   name: event-processor-job
-  namespace: default
+  namespace: flink
 spec:
   # Reference to the session cluster
   deploymentName: flink-session-cluster
 
   job:
     # JAR location - served by jar-server pod
-    jarURI: http://jar-server.default.svc:8080/flink-job-1.0.0.jar
+    jarURI: http://jar-server.flink.svc:8080/flink-job-1.0.0.jar
 
     # Main class
     entryClass: com.example.flink.EventProcessorJob
