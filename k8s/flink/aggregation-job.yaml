@@ -1,0 +1,38 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkSessionJob
+metadata:
+  name: aggregation-job
+  namespace: flink
+spec:
+  # Reference to the session cluster
+  deploymentName: flink-session-cluster
+
+  job:
+    # JAR location - served by jar-server pod (same JAR as EventProcessorJob)
+    jarURI: http://jar-server.flink.svc:8080/flink-job-1.0.0.jar
+
+    # Main class for aggregation job
+    entryClass: com.example.flink.AggregationJob
+
+    # Job parallelism - distribute work across available task slots
+    parallelism: 2
+
+    # How to upgrade when manifest changes
+    upgradeMode: savepoint
+
+    # Desired state
+    state: running
+
+    # Pass Kafka configuration as arguments
+    args:
+      - "--kafka-bootstrap-servers"
+      - "my-cluster-kafka-bootstrap.kafka.svc:9092"
+      - "--input-topic"
+      - "output-results"
+      - "--output-topic"
+      - "aggregated-metrics"
+      - "--consumer-group"
+      - "flink-aggregation"
+
+    # Allow non-restored state during development
+    allowNonRestoredState: true

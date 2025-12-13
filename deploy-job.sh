@@ -25,9 +25,14 @@ echo ""
 echo "✅ JAR server ready!"
 
 echo ""
-echo "🔄 (Re-)creating Flink job:"
+echo "🔄 (Re-)creating Flink event processor job:"
 kubectl delete -f k8s/flink/event-processor-job.yaml || true
 kubectl apply -f k8s/flink/event-processor-job.yaml
+
+echo ""
+echo "🔄 (Re-)creating Flink aggregation job:"
+kubectl delete -f k8s/flink/aggregation-job.yaml || true
+kubectl apply -f k8s/flink/aggregation-job.yaml
 
 echo ""
 echo "🏗️ Building event producer..."

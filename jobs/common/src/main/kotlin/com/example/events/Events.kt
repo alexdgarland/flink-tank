@@ -22,3 +22,11 @@ data class ErrorEvent(
     val errorMessage: String,
     val timestamp: String
 )
+
+data class AggregatedMetrics(
+    val userId: String,
+    val windowStart: String,
+    val windowEnd: String,
+    val totalEventCount: Int,
+    val eventTypeCounts: Map<String, Int>
+)
