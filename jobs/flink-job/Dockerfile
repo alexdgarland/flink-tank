@@ -5,23 +5,26 @@ FROM gradle:8.11-jdk11 AS builder
 WORKDIR /build
 
 # Copy Gradle files first for better caching
-COPY build.gradle.kts settings.gradle.kts gradle.properties ./
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
+COPY common/build.gradle.kts ./common/
+COPY flink-job/build.gradle.kts ./flink-job/
 
 # Download dependencies (this layer will be cached)
-RUN gradle dependencies --no-daemon || true
+RUN gradle :flink-job:dependencies --no-daemon || true
 
 # Copy source code
-COPY src ./src
+COPY common/src ./common/src
+COPY flink-job/src ./flink-job/src
 
 # Build the fat JAR
-RUN gradle shadowJar --no-daemon
+RUN gradle :flink-job:shadowJar --no-daemon
 
 # Stage 2: Serve the JAR via nginx
 FROM nginx:alpine
 
 # Copy the JAR to nginx html directory
-COPY --from=builder /build/build/libs/flink-job-*.jar /usr/share/nginx/html/
+COPY --from=builder /build/flink-job/build/libs/flink-job-*.jar /usr/share/nginx/html/
 
 # Simple nginx config to serve files
 RUN echo 'server { \

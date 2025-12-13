@@ -1,7 +1,7 @@
 plugins {
-    kotlin("jvm") version "1.9.22"
+    kotlin("jvm")
     application
-    id("com.gradleup.shadow") version "9.1.0"
+    id("com.gradleup.shadow")
 }
 
 group = "com.example"
@@ -16,6 +16,9 @@ val flinkConnectorKafkaVersion = "3.1.0-1.18"
 val kafkaVersion = "3.7.0"
 
 dependencies {
+    // Common module with shared event schemas
+    implementation(project(":common"))
+
     // Flink core dependencies
     implementation("org.apache.flink:flink-streaming-java:$flinkVersion")
     implementation("org.apache.flink:flink-clients:$flinkVersion")

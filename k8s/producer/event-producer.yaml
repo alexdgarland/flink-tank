@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: producer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-producer
+  namespace: producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-producer
+  template:
+    metadata:
+      labels:
+        app: event-producer
+    spec:
+      containers:
+      - name: producer
+        image: event-producer:latest
+        imagePullPolicy: Never  # Use local image from Kind
+        args:
+          - "--kafka-bootstrap-servers"
+          - "my-cluster-kafka-bootstrap.kafka.svc:9092"
+          - "--topic"
+          - "input-events"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"

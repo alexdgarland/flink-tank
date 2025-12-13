@@ -1,5 +1,8 @@
 package com.example.flink
 
+import com.example.events.ErrorEvent
+import com.example.events.InputEvent
+import com.example.events.ProcessedEvent
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -28,29 +31,6 @@ data class Connectors(
     val kafkaSource: KafkaSource<String>,
     val kafkaSink: KafkaSink<String>,
     val errorKafkaSink: KafkaSink<String>
-)
-
-data class InputEvent(
-    val id: String = "",
-    val type: String = "",
-    val timestamp: Long = 0,
-    val data: Map<String, Any> = emptyMap()
-)
-
-data class ProcessedEvent(
-    val originalId: String,
-    val eventType: String,
-    val processedAt: String,
-    val processingDelay: Long,
-    val enrichedData: Map<String, Any>,
-    val sequence: Int
-)
-
-data class ErrorEvent(
-    val rawMessage: String,
-    val errorType: String,
-    val errorMessage: String,
-    val timestamp: String
 )
 
 data class OutputStreams(

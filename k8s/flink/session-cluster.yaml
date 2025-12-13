@@ -13,16 +13,19 @@ spec:
     state.savepoints.dir: file:///flink-data/savepoints
     execution.checkpointing.interval: 60s
     execution.checkpointing.min-pause: 10s
+    # Explicitly configure memory to fit in container limits
+    jobmanager.memory.process.size: 1024m
+    taskmanager.memory.process.size: 1024m
 
   serviceAccount: flink
   jobManager:
     resource:
-      memory: "2048m"
-      cpu: 1
+      memory: "1024m"
+      cpu: 0.5
   taskManager:
     resource:
-      memory: "2048m"
-      cpu: 1
+      memory: "1024m"
+      cpu: 0.5
     replicas: 2
 
   podTemplate:
