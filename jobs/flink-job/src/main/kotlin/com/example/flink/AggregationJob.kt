@@ -74,17 +74,42 @@ object AggregationJob {
      *
      * State management:
      * - Uses ValueState to store list of events in current window
+     * - Uses ValueState to track next scheduled timer (avoids redundant registration)
      * - Uses processing-time timers to emit aggregates every 5 seconds
      * - Prunes old events (outside 10-minute window) on each timer fire
+     *
+     * Timer optimization (LIKELY A PESSIMIZATION - NOT IDIOMATIC):
+     * - processElement checks nextTimerTime state to avoid redundant timer registration
+     * - This trades state backend I/O (filesystem reads/writes) for in-memory timer deduplication
+     * - Flink's timer service already deduplicates internally (in-memory priority queue)
+     * - Reading/writing state on every event is probably SLOWER than letting Flink deduplicate
+     * - Kept here to demonstrate the trade-off and why "obvious optimizations" aren't always wins
+     *
+     * More idiomatic approach would be:
+     * ```
+     * override fun processElement(...) {
+     *     // Just register timer - Flink deduplicates automatically
+     *     ctx.timerService().registerProcessingTimeTimer(nextEmitTime)
+     * }
+     * ```
+     *
+     * Timer behavior:
+     * - processElement only bootstraps timer if none is scheduled (cold start or after stopping)
+     * - onTimer re-registers next timer ONLY if window still has data
+     * - This provides "activity-based heartbeat" behavior similar to declarative sliding windows
+     * - Always emits on timer (even with zero counts) so downstream gets explicit "went to zero" signal
      *
      * This demonstrates:
      * 1. State registration and access (getRuntimeContext().getState)
      * 2. Processing-time timers (registerProcessingTimeTimer)
      * 3. Manual event pruning and aggregation
+     * 4. Potential trade-offs in "optimization" attempts
+     * 5. Why profiling matters before optimizing
      */
     private class SlidingWindowAggregator : KeyedProcessFunction<String, ProcessedEvent, AggregatedMetrics>() {
 
         private var windowState: ValueState<WindowState>? = null
+        private var nextTimerTime: ValueState<Long>? = null  // See class comment: likely slower than just registering!
 
         @Throws(Exception::class)
         override fun open(openContext: OpenContext?) {
@@ -92,6 +117,9 @@ object AggregationJob {
             // State is keyed by userId, so each user has independent state
             windowState = getRuntimeContext().getState(
                 ValueStateDescriptor("window-state", WindowState::class.java)
+            )
+            nextTimerTime = getRuntimeContext().getState(
+                ValueStateDescriptor("next-timer-time", Long::class.java)
             )
         }
 
@@ -112,11 +140,19 @@ object AggregationJob {
             // Update state
             windowState?.update(state)
 
-            // Register a timer for the next emission if one isn't already set
-            // We emit every 5 seconds, so round up to next 5-second boundary
+            // Bootstrap timer only if no future timer is scheduled
+            // This handles: cold start (first event) or restart after window went empty
             val currentTime = ctx.timerService().currentProcessingTime()
-            val nextEmitTime = ((currentTime / EMIT_INTERVAL_MS) + 1) * EMIT_INTERVAL_MS
-            ctx.timerService().registerProcessingTimeTimer(nextEmitTime)
+            val existingTimer = nextTimerTime?.value() ?: 0L
+
+            if (existingTimer <= currentTime) {
+                // No active timer - bootstrap one
+                val nextEmitTime = ((currentTime / EMIT_INTERVAL_MS) + 1) * EMIT_INTERVAL_MS
+                ctx.timerService().registerProcessingTimeTimer(nextEmitTime)
+                nextTimerTime?.update(nextEmitTime)
+                logger.debug("Bootstrapped timer for key ${ctx.currentKey} at $nextEmitTime")
+            }
+            // Otherwise, timer is already scheduled - no need to register again
         }
 
         override fun onTimer(
@@ -132,32 +168,40 @@ object AggregationJob {
             // Prune events outside the 10-minute window
             state.events.removeIf { it.timestamp < windowStart }
 
-            // Only emit if we have events in the window
-            if (state.events.isNotEmpty()) {
-                // Aggregate: count total and by event type
-                val totalCount = state.events.size
-                val typeCounts = state.events
-                    .groupingBy { it.eventType }
-                    .eachCount()
-
-                // Emit aggregated metrics
-                val metrics = AggregatedMetrics(
-                    userId = ctx.currentKey,
-                    windowStart = Instant.ofEpochMilli(windowStart).toString(),
-                    windowEnd = Instant.ofEpochMilli(now).toString(),
-                    totalEventCount = totalCount,
-                    eventTypeCounts = typeCounts
-                )
-                out.collect(metrics)
-
-                logger.debug("Emitted metrics for user ${ctx.currentKey}: $totalCount events, types: $typeCounts")
+            // Always emit metrics (even if zero) to signal state changes to downstream
+            val totalCount = state.events.size
+            val typeCounts = if (state.events.isNotEmpty()) {
+                state.events.groupingBy { it.eventType }.eachCount()
+            } else {
+                emptyMap()
             }
+
+            val metrics = AggregatedMetrics(
+                userId = ctx.currentKey,
+                windowStart = Instant.ofEpochMilli(windowStart).toString(),
+                windowEnd = Instant.ofEpochMilli(now).toString(),
+                totalEventCount = totalCount,
+                eventTypeCounts = typeCounts
+            )
+            out.collect(metrics)
+
+            logger.debug("Emitted metrics for user ${ctx.currentKey}: $totalCount events, types: $typeCounts")
 
             // Update state with pruned events
             windowState?.update(state)
 
-            // Register next timer (5 seconds from now)
-            ctx.timerService().registerProcessingTimeTimer(timestamp + EMIT_INTERVAL_MS)
+            // Only re-register timer if window still has data (activity-based heartbeat)
+            // If window is empty, timer stops until new event arrives (processElement bootstraps)
+            if (state.events.isNotEmpty()) {
+                val nextTimerTime = timestamp + EMIT_INTERVAL_MS
+                ctx.timerService().registerProcessingTimeTimer(nextTimerTime)
+                this.nextTimerTime?.update(nextTimerTime)
+            } else {
+                // Window empty - don't re-register timer
+                // Next event will bootstrap via processElement
+                this.nextTimerTime?.update(0)
+                logger.debug("Window empty for key ${ctx.currentKey}, stopping timer until next event")
+            }
         }
     }
 
